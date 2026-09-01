@@ -6,7 +6,7 @@ use rdkafka::ClientConfig;
 use std::collections::HashMap;
 use std::time::Duration;
 
-use actix_web::http::header::HeaderMap;
+use http::HeaderMap;
 use std::str::FromStr;
 
 use crate::errors::RustusError;
@@ -152,8 +152,8 @@ mod test {
     use crate::notifiers::{base::Notifier, Hook};
 
     use super::KafkaNotifier;
-    use actix_web::http::header::HeaderMap;
     use futures::StreamExt;
+    use http::HeaderMap;
     use rdkafka::{
         admin::{AdminClient, AdminOptions, NewTopic},
         client::DefaultClientContext,
@@ -209,7 +209,7 @@ mod test {
         consumer
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn simple_success_on_topic() {
         let topic = uuid::Uuid::new_v4().simple().to_string();
         let notifier = get_notifier(Some(topic.as_str()), None);
@@ -224,7 +224,7 @@ mod test {
         assert_eq!(msg.payload().unwrap(), data.to_bytes());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn simple_success_on_prefix() {
         let prefix = uuid::Uuid::new_v4().simple().to_string();
         let notifier = get_notifier(None, Some(&prefix));

@@ -1,5 +1,5 @@
 use crate::{errors::RustusResult, file_info::FileInfo, RustusConf};
-use actix_web::http::header::HeaderMap;
+use http::HeaderMap;
 use log::debug;
 
 use super::{

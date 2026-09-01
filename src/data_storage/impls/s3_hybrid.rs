@@ -9,10 +9,14 @@ use crate::{
 
 use crate::utils::dir_struct::substr_time;
 
-use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder};
+use axum::{
+    body::Body,
+    response::{IntoResponse, Response},
+};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
+use http::HeaderMap;
 use s3::{
     command::Command,
     request::{tokio_backend::HyperRequest, Request as S3Request},
@@ -143,20 +147,18 @@ impl DataStorage for S3HybridDataStorage {
     async fn get_contents(
         &self,
         file_info: &FileInfo,
-        request: &HttpRequest,
-    ) -> RustusResult<HttpResponse> {
+        headers: &HeaderMap,
+    ) -> RustusResult<Response> {
         if file_info.length != Some(file_info.offset) {
             log::debug!("File isn't uploaded. Returning from local storage.");
-            return self.local_storage.get_contents(file_info, request).await;
+            return self.local_storage.get_contents(file_info, headers).await;
         }
         let key = self.get_s3_key(&file_info.id, file_info.created_at);
         let command = Command::GetObject;
         let s3_request = HyperRequest::new(&self.bucket, &key, command).await?;
         let s3_response = s3_request.response_data_to_stream().await?;
-        let mut response = HttpResponseBuilder::new(actix_web::http::StatusCode::OK);
-        Ok(response
-            .insert_header(generate_disposition(file_info.get_filename()))
-            .streaming(s3_response.bytes))
+        let body = Body::from_stream(s3_response.bytes);
+        Ok(([generate_disposition(file_info.get_filename())], body).into_response())
     }
 
     async fn add_bytes(&self, file_info: &mut FileInfo, bytes: Bytes) -> RustusResult<()> {

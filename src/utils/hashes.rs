@@ -1,7 +1,7 @@
 use crate::{errors::RustusError, RustusResult};
-use actix_web::http::header::HeaderValue;
 use base64::Engine;
 use digest::Digest;
+use http::header::HeaderValue;
 
 /// Checks if hash-sum of a slice matches the given checksum.
 fn checksum_verify(algo: &str, bytes: &[u8], checksum: &[u8]) -> RustusResult<bool> {
@@ -66,7 +66,7 @@ pub fn verify_chunk_checksum(header: &HeaderValue, data: &[u8]) -> RustusResult<
 #[cfg(test)]
 mod tests {
     use super::{checksum_verify, verify_chunk_checksum};
-    use actix_web::http::header::HeaderValue;
+    use http::header::HeaderValue;
 
     #[test]
     fn test_success_checksum_verify() {

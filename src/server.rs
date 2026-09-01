@@ -1,45 +1,36 @@
-use crate::{protocol, State};
-use actix_web::{middleware, web, web::PayloadConfig};
+use axum::{extract::DefaultBodyLimit, Router};
+use tower_http::set_header::SetResponseHeaderLayer;
 
-pub fn rustus_service(state: State) -> impl Fn(&mut web::ServiceConfig) {
-    move |web_app| {
-        web_app.service(
-            web::scope(state.config.base_url().as_str())
-                .app_data(web::Data::new(state.clone()))
-                .app_data(PayloadConfig::new(state.config.max_body_size))
-                .wrap(middleware::NormalizePath::new(
-                    middleware::TrailingSlash::Always,
-                ))
-                // Main middleware that appends TUS headers.
-                .wrap(
-                    middleware::DefaultHeaders::new()
-                        .add(("Tus-Resumable", "1.0.0"))
-                        .add(("Tus-Version", "1.0.0")),
-                )
-                .configure(protocol::setup(state.config.clone())),
-        );
-    }
+use crate::{protocol, State};
+
+pub fn rustus_service(state: State) -> Router {
+    let base = format!("/{}", state.config.base_url());
+    let max_body_size = state.config.max_body_size;
+    Router::new()
+        .nest(&base, protocol::setup(&state.config))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            http::header::HeaderName::from_static("tus-resumable"),
+            http::HeaderValue::from_static("1.0.0"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            http::header::HeaderName::from_static("tus-version"),
+            http::HeaderValue::from_static("1.0.0"),
+        ))
+        .layer(DefaultBodyLimit::max(max_body_size))
+        .with_state(state)
 }
 
 #[cfg(test)]
 pub mod test {
     use super::rustus_service;
     use crate::{metrics::RustusMetrics, state::State};
-    use actix_web::{dev::ServiceResponse, test::init_service, web, App};
+    use axum::{Extension, Router};
+    use tower::Layer;
+    use tower_http::normalize_path::{NormalizePath, NormalizePathLayer};
 
-    pub async fn get_service(
-        state: State,
-    ) -> impl actix_web::dev::Service<
-        actix_http::Request,
-        Response = ServiceResponse,
-        Error = actix_web::Error,
-    > {
+    pub fn get_service(state: State) -> NormalizePath<Router> {
         let metrics = RustusMetrics::new().unwrap();
-        init_service(
-            App::new()
-                .app_data(web::Data::new(metrics))
-                .configure(rustus_service(state.clone())),
-        )
-        .await
+        let router = rustus_service(state).layer(Extension(metrics));
+        NormalizePathLayer::trim_trailing_slash().layer(router)
     }
 }

@@ -1,6 +1,7 @@
 use crate::{errors::RustusResult, file_info::FileInfo};
-use actix_web::{HttpRequest, HttpResponse};
+use axum::response::Response;
 use bytes::Bytes;
+use http::HeaderMap;
 
 pub trait DataStorage {
     /// Get name of the storage.
@@ -21,17 +22,17 @@ pub trait DataStorage {
 
     /// Get contents of a file.
     ///
-    /// This method must return `HttpResponse`.
+    /// This method must return `Response`.
     /// This resposne would be sent directly.
     ///
     /// # Params
     /// `file_info` - info about current file.
-    /// `request` - this parameter is needed to construct responses in some case
+    /// `headers` - this parameter is needed to construct responses in some case
     async fn get_contents(
         &self,
         file_info: &FileInfo,
-        request: &HttpRequest,
-    ) -> RustusResult<HttpResponse>;
+        headers: &HeaderMap,
+    ) -> RustusResult<Response>;
 
     /// Add bytes to the file.
     ///

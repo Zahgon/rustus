@@ -1,5 +1,5 @@
 use crate::{errors::RustusResult, file_info::FileInfo};
-use actix_web::http::header::HeaderMap;
+use http::HeaderMap;
 
 use crate::notifiers::hooks::Hook;
 

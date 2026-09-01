@@ -1,12 +1,42 @@
 use crate::{file_info::FileInfo, from_str};
-use actix_web::{http::header::HeaderMap, HttpRequest};
 use derive_more::{Display, From};
+use http::HeaderMap;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::str::FromStr;
 use strum::EnumIter;
 use strum::IntoEnumIterator;
+
+/// Framework-agnostic snapshot of the parts of an HTTP request
+/// that hook message formats need.
+///
+/// The web framework extracts these values from the incoming request
+/// and hands them to [`Format::format`], so message formatting does
+/// not depend on any particular framework's request type.
+pub struct RequestInfo {
+    pub uri: String,
+    pub method: String,
+    pub remote_addr: Option<String>,
+    pub headers: HeaderMap,
+}
+
+impl RequestInfo {
+    #[must_use]
+    pub fn new(
+        uri: String,
+        method: String,
+        remote_addr: Option<String>,
+        headers: HeaderMap,
+    ) -> Self {
+        Self {
+            uri,
+            method,
+            remote_addr,
+            headers,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, Display, From, PartialEq, EnumIter)]
 pub enum Format {
@@ -21,16 +51,12 @@ pub enum Format {
 from_str!(Format, "format");
 
 impl Format {
-    pub fn format(
-        &self,
-        request: &HttpRequest,
-        file_info: &FileInfo,
-        behind_proxy: bool,
-    ) -> String {
+    #[must_use]
+    pub fn format(&self, request: &RequestInfo, file_info: &FileInfo) -> String {
         match self {
-            Self::Default => default_format(request, file_info, behind_proxy),
-            Self::Tusd => tusd_format(request, file_info, behind_proxy),
-            Self::V2 => rustus_format_v2(request, file_info, behind_proxy),
+            Self::Default => default_format(request, file_info),
+            Self::Tusd => tusd_format(request, file_info),
+            Self::V2 => rustus_format_v2(request, file_info),
         }
     }
 }
@@ -100,33 +126,18 @@ fn headers_to_value_map(headers: &HeaderMap, use_arrays: bool) -> HashMap<String
     headers_map
 }
 
-/// Resolves real client's IP.
-///
-/// This function is used to get peer's address,
-/// but if Rustus is running behind proxy, then you
-/// it should check for `Forwarded` or `X-Forwarded-For` headers.
-fn get_remote_addr(request: &HttpRequest, behind_proxy: bool) -> Option<String> {
-    if behind_proxy {
-        request
-            .connection_info()
-            .realip_remote_addr()
-            .map(String::from)
-    } else {
-        request.connection_info().peer_addr().map(String::from)
-    }
-}
-
 /// Default format is specific for Rustus.
 ///
 /// This format is a simple serialized `FileInfo` and some parts of the request.
-pub fn default_format(request: &HttpRequest, file_info: &FileInfo, behind_proxy: bool) -> String {
+#[must_use]
+pub fn default_format(request: &RequestInfo, file_info: &FileInfo) -> String {
     let value = json!({
         "upload": file_info,
         "request": {
-            "URI": request.uri().to_string(),
-            "method": request.method().to_string(),
-            "remote_addr": get_remote_addr(request, behind_proxy),
-            "headers": headers_to_value_map(request.headers(), false)
+            "URI": request.uri,
+            "method": request.method,
+            "remote_addr": request.remote_addr,
+            "headers": headers_to_value_map(&request.headers, false)
         }
     });
     value.to_string()
@@ -135,14 +146,15 @@ pub fn default_format(request: &HttpRequest, file_info: &FileInfo, behind_proxy:
 /// Default format is specific for Rustus V2.
 ///
 /// This format is almost the same as V1, but with some enhancements.
-pub fn rustus_format_v2(request: &HttpRequest, file_info: &FileInfo, behind_proxy: bool) -> String {
+#[must_use]
+pub fn rustus_format_v2(request: &RequestInfo, file_info: &FileInfo) -> String {
     let value = json!({
         "upload": file_info,
         "request": {
-            "uri": request.uri().to_string(),
-            "method": request.method().to_string(),
-            "remote_addr": get_remote_addr(request, behind_proxy),
-            "headers": headers_to_value_map(request.headers(), false)
+            "uri": request.uri,
+            "method": request.method,
+            "remote_addr": request.remote_addr,
+            "headers": headers_to_value_map(&request.headers, false)
         }
     });
     value.to_string()
@@ -155,14 +167,15 @@ pub fn rustus_format_v2(request: &HttpRequest, file_info: &FileInfo, behind_prox
 ///
 /// Generally speaking, it's almost the same as the default format,
 /// but some variables are ommited and headers are added to the request.
-pub fn tusd_format(request: &HttpRequest, file_info: &FileInfo, behind_proxy: bool) -> String {
+#[must_use]
+pub fn tusd_format(request: &RequestInfo, file_info: &FileInfo) -> String {
     let value = json!({
         "Upload": TusdFileInfo::from(file_info),
         "HTTPRequest": {
-            "URI": request.uri().to_string(),
-            "Method": request.method().to_string(),
-            "RemoteAddr": get_remote_addr(request, behind_proxy),
-            "Header": headers_to_value_map(request.headers(), true)
+            "URI": request.uri,
+            "Method": request.method,
+            "RemoteAddr": request.remote_addr,
+            "Header": headers_to_value_map(&request.headers, true)
         }
     });
     value.to_string()

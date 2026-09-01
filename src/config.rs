@@ -584,7 +584,7 @@ pub struct RustusConf {
     #[arg(long, default_value = "INFO", env = "RUSTUS_LOG_LEVEL")]
     pub log_level: log::LevelFilter,
 
-    /// Number of actix workers default value = number of cpu cores.
+    /// Number of worker threads default value = number of cpu cores.
     #[arg(long, short, env = "RUSTUS_WORKERS")]
     pub workers: Option<usize>,
 

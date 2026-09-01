@@ -6,4 +6,4 @@ pub mod message_format;
 
 pub use hooks::Hook;
 pub use manager::NotificationManager;
-pub use message_format::Format;
+pub use message_format::{Format, RequestInfo};

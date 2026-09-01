@@ -1,11 +1,12 @@
 use crate::protocol::extensions::Extensions;
-use actix_web::{http::StatusCode, web, HttpResponse, HttpResponseBuilder};
+use axum::{extract::State, response::IntoResponse};
+use http::StatusCode;
 
-use crate::State;
+use crate::State as RustusState;
 
 #[allow(clippy::needless_pass_by_value)]
 #[allow(clippy::unused_async)]
-pub async fn server_info(state: web::Data<State>) -> HttpResponse {
+pub async fn server_info(State(state): State<RustusState>) -> impl IntoResponse {
     let ext_str = state
         .config
         .tus_extensions
@@ -13,34 +14,41 @@ pub async fn server_info(state: web::Data<State>) -> HttpResponse {
         .map(ToString::to_string)
         .collect::<Vec<String>>()
         .join(",");
-    let mut response_builder = HttpResponseBuilder::new(StatusCode::OK);
-    response_builder.insert_header(("Tus-Extension", ext_str.as_str()));
-    if state.config.tus_extensions.contains(&Extensions::Checksum) {
-        response_builder.insert_header(("Tus-Checksum-Algorithm", "md5,sha1,sha256,sha512"));
+    let mut headers = http::HeaderMap::new();
+    if let Ok(value) = http::HeaderValue::from_str(ext_str.as_str()) {
+        headers.insert("Tus-Extension", value);
     }
-    response_builder.finish()
+    if state.config.tus_extensions.contains(&Extensions::Checksum) {
+        headers.insert(
+            "Tus-Checksum-Algorithm",
+            http::HeaderValue::from_static("md5,sha1,sha256,sha512"),
+        );
+    }
+    (StatusCode::OK, headers)
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{protocol::extensions::Extensions, server::test::get_service, State};
-    use actix_web::test::{call_service, TestRequest};
+    use axum::body::Body;
+    use http::{Method, Request};
+    use tower::ServiceExt;
 
-    use actix_web::http::Method;
-
-    #[actix_rt::test]
+    #[tokio::test]
     async fn test_server_info() {
         let mut state = State::test_new().await;
-        let rustus = get_service(state.clone()).await;
+        let rustus = get_service(state.clone());
         state.config.tus_extensions = vec![
             Extensions::Creation,
             Extensions::Concatenation,
             Extensions::Termination,
         ];
-        let request = TestRequest::with_uri(state.config.test_url().as_str())
+        let request = Request::builder()
             .method(Method::OPTIONS)
-            .to_request();
-        let response = call_service(&rustus, request).await;
+            .uri(state.config.test_url().as_str())
+            .body(Body::empty())
+            .unwrap();
+        let response = rustus.oneshot(request).await.unwrap();
         let extensions = response
             .headers()
             .get("Tus-Extension")

@@ -59,7 +59,7 @@ impl Notifier for NatsNotifier {
         message: String,
         hook: crate::notifiers::Hook,
         _file_info: &crate::file_info::FileInfo,
-        headers_map: &actix_web::http::header::HeaderMap,
+        headers_map: &http::HeaderMap,
     ) -> RustusResult<()> {
         let hook_name = hook.to_string();
         let subject = self.prefix.as_ref().map_or_else(
@@ -98,9 +98,9 @@ mod test {
     use crate::notifiers::{base::Notifier, Hook};
 
     use super::NatsNotifier;
-    use actix_web::http::header::HeaderMap;
     use bytes::Bytes;
     use futures::StreamExt;
+    use http::HeaderMap;
 
     async fn get_notifier(
         subject: Option<&str>,
@@ -138,7 +138,7 @@ mod test {
         client
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn simple_success_on_subject() {
         let subject = uuid::Uuid::new_v4().simple().to_string();
         let notifier = get_notifier(Some(subject.as_str()), None, false).await;
@@ -168,7 +168,7 @@ mod test {
         assert_eq!(msg.payload, data.as_bytes());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn simple_success_on_prefix() {
         let prefix = uuid::Uuid::new_v4().simple().to_string();
         let notifier = get_notifier(None, Some(&prefix), false).await;
@@ -202,7 +202,7 @@ mod test {
         assert_eq!(msg.payload, data.as_bytes());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn simple_success_on_subj_wait_reply() {
         let subject = uuid::Uuid::new_v4().simple().to_string();
         let notifier = get_notifier(Some(subject.as_str()), None, true).await;
@@ -244,7 +244,7 @@ mod test {
             .unwrap();
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn simple_success_on_prefix_wait_reply() {
         let prefix = uuid::Uuid::new_v4().simple().to_string();
         let notifier = get_notifier(None, Some(&prefix), true).await;

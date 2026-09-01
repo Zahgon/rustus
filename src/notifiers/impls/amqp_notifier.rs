@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use actix_web::http::header::HeaderMap;
+use http::HeaderMap;
 use lapin::{
     options::{BasicPublishOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions},
     types::{AMQPValue, FieldTable, LongString},
@@ -192,7 +192,7 @@ mod tests {
     };
 
     use super::AMQPNotifier;
-    use actix_web::http::header::HeaderMap;
+    use http::HeaderMap;
     use lapin::options::{BasicAckOptions, BasicGetOptions};
     use strum::IntoEnumIterator;
 
@@ -220,7 +220,7 @@ mod tests {
         notifier
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn success() {
         let notifier = get_notifier().await;
         for hook in Hook::iter() {
@@ -255,7 +255,7 @@ mod tests {
         }
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn unknown_url() {
         let notifier = AMQPNotifier::new(crate::config::AMQPHooksOptions {
             url: Some(String::from("http://unknown")),

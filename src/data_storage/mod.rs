@@ -137,18 +137,18 @@ impl DataStorage for DataStorageImpl {
     async fn get_contents(
         &self,
         file_info: &FileInfo,
-        request: &actix_web::HttpRequest,
-    ) -> crate::errors::RustusResult<actix_web::HttpResponse> {
+        headers: &http::HeaderMap,
+    ) -> crate::errors::RustusResult<axum::response::Response> {
         match self {
             Self::File(file_data_storage) => {
-                file_data_storage.get_contents(file_info, request).await
+                file_data_storage.get_contents(file_info, headers).await
             }
             Self::S3Hybrid(s3_hybrid_data_storage) => {
                 s3_hybrid_data_storage
-                    .get_contents(file_info, request)
+                    .get_contents(file_info, headers)
                     .await
             }
-            Self::S3(s3_data_storage) => s3_data_storage.get_contents(file_info, request).await,
+            Self::S3(s3_data_storage) => s3_data_storage.get_contents(file_info, headers).await,
         }
     }
 

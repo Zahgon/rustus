@@ -1,35 +1,29 @@
+use axum::{
+    body::Body,
+    extract::{Path, State},
+    response::Response,
+};
+use http::StatusCode;
+
 use crate::{
     data_storage::base::DataStorage, errors::RustusError, info_storage::base::InfoStorage,
+    RustusResult, State as RustusState,
 };
-use actix_web::{
-    http::header::{CacheControl, CacheDirective},
-    web, HttpRequest, HttpResponse,
-};
-use futures::stream::empty;
-
-use crate::{RustusResult, State};
 
 pub async fn get_file_info(
-    state: web::Data<State>,
-    request: HttpRequest,
-) -> RustusResult<HttpResponse> {
-    // Getting file id from URL.
-    if request.match_info().get("file_id").is_none() {
-        return Err(RustusError::FileNotFound);
-    }
-    let file_id = request.match_info().get("file_id").unwrap();
-
+    State(state): State<RustusState>,
+    Path(file_id): Path<String>,
+) -> RustusResult<Response> {
     // Getting file info from info_storage.
-    let file_info = state.info_storage.get_info(file_id).await?;
+    let file_info = state.info_storage.get_info(&file_id).await?;
     if file_info.storage != state.data_storage.get_name() {
         return Err(RustusError::FileNotFound);
     }
-    let mut builder = HttpResponse::Ok();
+    let mut builder = Response::builder().status(StatusCode::OK);
     if file_info.is_partial {
-        builder.insert_header(("Upload-Concat", "partial"));
+        builder = builder.header("Upload-Concat", "partial");
     }
     if file_info.is_final && file_info.parts.is_some() {
-        #[allow(clippy::or_fun_call)]
         let parts = file_info
             .parts
             .clone()
@@ -38,41 +32,45 @@ pub async fn get_file_info(
             .map(|file| format!("/{}/{}", state.config.base_url(), file.as_str()))
             .collect::<Vec<String>>()
             .join(" ");
-        builder.insert_header(("Upload-Concat", format!("final; {parts}")));
+        builder = builder.header("Upload-Concat", format!("final; {parts}"));
     }
-    builder
-        .no_chunking(file_info.offset as u64)
-        .insert_header(("Upload-Offset", file_info.offset.to_string()));
+    builder = builder.header("Upload-Offset", file_info.offset.to_string());
     // Upload length is known.
     if let Some(upload_len) = file_info.length {
-        builder
-            .no_chunking(upload_len as u64)
-            .insert_header(("Content-Length", file_info.offset.to_string()))
-            .insert_header(("Upload-Length", upload_len.to_string()));
+        builder = builder
+            .header("Content-Length", file_info.offset.to_string())
+            .header("Upload-Length", upload_len.to_string());
     } else {
-        builder.insert_header(("Upload-Defer-Length", "1"));
+        builder = builder.header("Upload-Defer-Length", "1");
     }
     if let Some(meta) = file_info.get_metadata_string() {
-        builder.insert_header(("Upload-Metadata", meta));
+        builder = builder.header("Upload-Metadata", meta);
     }
-    builder.insert_header(("Upload-Created", file_info.created_at.timestamp()));
-    builder.insert_header(CacheControl(vec![CacheDirective::NoCache]));
-    Ok(builder.streaming(empty::<RustusResult<web::Bytes>>()))
+    builder = builder.header(
+        "Upload-Created",
+        file_info.created_at.timestamp().to_string(),
+    );
+    builder = builder.header("Cache-Control", "no-cache");
+    // Header to prevent the client and/or proxies from caching the response.
+    builder = builder.header("Cache-Control", "no-store");
+    builder
+        .body(Body::empty())
+        .map_err(|_| RustusError::Unknown)
 }
 
 #[cfg(test)]
 mod tests {
-    use actix_web::http::{Method, StatusCode};
-
     use crate::{info_storage::base::InfoStorage, server::test::get_service, State};
-    use actix_web::test::{call_service, TestRequest};
+    use axum::body::Body;
+    use http::{Method, Request, StatusCode};
+    use tower::ServiceExt;
 
     use base64::{engine::general_purpose, Engine};
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn success() {
         let state = State::test_new().await;
-        let rustus = get_service(state.clone()).await;
+        let rustus = get_service(state.clone());
         let mut file_info = state.create_test_file().await;
         file_info.offset = 100;
         file_info.length = Some(100);
@@ -81,10 +79,12 @@ mod tests {
             .set_info(&file_info, false)
             .await
             .unwrap();
-        let request = TestRequest::with_uri(state.config.file_url(file_info.id.as_str()).as_str())
+        let request = Request::builder()
             .method(Method::HEAD)
-            .to_request();
-        let response = call_service(&rustus, request).await;
+            .uri(state.config.file_url(file_info.id.as_str()))
+            .body(Body::empty())
+            .unwrap();
+        let response = rustus.oneshot(request).await.unwrap();
         let offset = response
             .headers()
             .get("Upload-Offset")
@@ -96,10 +96,10 @@ mod tests {
         assert_eq!(file_info.offset, offset);
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn success_metadata() {
         let state = State::test_new().await;
-        let rustus = get_service(state.clone()).await;
+        let rustus = get_service(state.clone());
         let mut file_info = state.create_test_file().await;
         file_info.offset = 100;
         file_info.length = Some(100);
@@ -109,10 +109,12 @@ mod tests {
             .set_info(&file_info, false)
             .await
             .unwrap();
-        let request = TestRequest::with_uri(state.config.file_url(file_info.id.as_str()).as_str())
+        let request = Request::builder()
             .method(Method::HEAD)
-            .to_request();
-        let response = call_service(&rustus, request).await;
+            .uri(state.config.file_url(file_info.id.as_str()))
+            .body(Body::empty())
+            .unwrap();
+        let response = rustus.oneshot(request).await.unwrap();
         let metadata = response
             .headers()
             .get("Upload-Metadata")
@@ -125,10 +127,10 @@ mod tests {
         );
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn success_defer_len() {
         let state = State::test_new().await;
-        let rustus = get_service(state.clone()).await;
+        let rustus = get_service(state.clone());
         let mut file_info = state.create_test_file().await;
         file_info.deferred_size = true;
         file_info.length = None;
@@ -137,10 +139,12 @@ mod tests {
             .set_info(&file_info, false)
             .await
             .unwrap();
-        let request = TestRequest::with_uri(state.config.file_url(file_info.id.as_str()).as_str())
+        let request = Request::builder()
             .method(Method::HEAD)
-            .to_request();
-        let response = call_service(&rustus, request).await;
+            .uri(state.config.file_url(file_info.id.as_str()))
+            .body(Body::empty())
+            .unwrap();
+        let response = rustus.oneshot(request).await.unwrap();
         assert_eq!(
             response
                 .headers()
@@ -152,10 +156,10 @@ mod tests {
         );
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn test_get_file_info_partial() {
         let state = State::test_new().await;
-        let rustus = get_service(state.clone()).await;
+        let rustus = get_service(state.clone());
         let mut file_info = state.create_test_file().await;
         file_info.is_partial = true;
         state
@@ -163,10 +167,12 @@ mod tests {
             .set_info(&file_info, false)
             .await
             .unwrap();
-        let request = TestRequest::with_uri(state.config.file_url(file_info.id.as_str()).as_str())
+        let request = Request::builder()
             .method(Method::HEAD)
-            .to_request();
-        let response = call_service(&rustus, request).await;
+            .uri(state.config.file_url(file_info.id.as_str()))
+            .body(Body::empty())
+            .unwrap();
+        let response = rustus.oneshot(request).await.unwrap();
         assert_eq!(
             response
                 .headers()
@@ -178,10 +184,10 @@ mod tests {
         );
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn success_final() {
         let state = State::test_new().await;
-        let rustus = get_service(state.clone()).await;
+        let rustus = get_service(state.clone());
         let mut file_info = state.create_test_file().await;
         file_info.is_partial = false;
         file_info.is_final = true;
@@ -191,10 +197,12 @@ mod tests {
             .set_info(&file_info, false)
             .await
             .unwrap();
-        let request = TestRequest::with_uri(state.config.file_url(file_info.id.as_str()).as_str())
+        let request = Request::builder()
             .method(Method::HEAD)
-            .to_request();
-        let response = call_service(&rustus, request).await;
+            .uri(state.config.file_url(file_info.id.as_str()))
+            .body(Body::empty())
+            .unwrap();
+        let response = rustus.oneshot(request).await.unwrap();
         assert_eq!(
             response
                 .headers()
@@ -211,21 +219,23 @@ mod tests {
         );
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn no_file() {
         let state = State::test_new().await;
-        let rustus = get_service(state.clone()).await;
-        let request = TestRequest::with_uri(state.config.file_url("unknknown").as_str())
+        let rustus = get_service(state.clone());
+        let request = Request::builder()
             .method(Method::HEAD)
-            .to_request();
-        let response = call_service(&rustus, request).await;
+            .uri(state.config.file_url("unknknown"))
+            .body(Body::empty())
+            .unwrap();
+        let response = rustus.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn test_get_file_info_wrong_storage() {
         let state = State::test_new().await;
-        let rustus = get_service(state.clone()).await;
+        let rustus = get_service(state.clone());
         let mut file_info = state.create_test_file().await;
         file_info.storage = String::from("unknown");
         state
@@ -233,10 +243,12 @@ mod tests {
             .set_info(&file_info, false)
             .await
             .unwrap();
-        let request = TestRequest::with_uri(state.config.file_url(file_info.id.as_str()).as_str())
+        let request = Request::builder()
             .method(Method::HEAD)
-            .to_request();
-        let response = call_service(&rustus, request).await;
+            .uri(state.config.file_url(file_info.id.as_str()))
+            .body(Body::empty())
+            .unwrap();
+        let response = rustus.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }

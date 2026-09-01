@@ -4,7 +4,7 @@ use crate::{
     notifiers::{base::Notifier, hooks::Hook},
 };
 
-use actix_web::http::header::HeaderMap;
+use http::HeaderMap;
 use log::debug;
 use reqwest::Client;
 use std::time::Duration;
@@ -89,11 +89,11 @@ mod tests {
     };
 
     use super::HttpNotifier;
-    use actix_web::http::header::{HeaderMap, HeaderName, HeaderValue};
+    use http::header::{HeaderMap, HeaderName, HeaderValue};
     use httptest::{matchers::contains, responders::status_code};
     use std::{str::FromStr, time::Duration};
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn success_request() {
         let server = httptest::Server::run();
         server.expect(
@@ -116,7 +116,7 @@ mod tests {
             .unwrap();
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn timeout_request() {
         let server = httptest::Server::run();
         server.expect(
@@ -142,7 +142,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn unknown_url() {
         let server = httptest::Server::run();
         server.expect(
@@ -165,7 +165,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn forwarded_header() {
         let server = httptest::Server::run();
         server.expect(

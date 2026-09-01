@@ -108,7 +108,7 @@ mod tests {
         io::{Read, Write},
     };
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn preparation() {
         let dir = tempdir::TempDir::new("file_info").unwrap();
         let target_path = dir.into_path().join("not_exist");
@@ -118,7 +118,7 @@ mod tests {
         assert!(target_path.exists());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn setting_info() {
         let dir = tempdir::TempDir::new("file_info").unwrap();
         let storage = FileInfoStorage::new(dir.into_path());
@@ -139,7 +139,7 @@ mod tests {
         assert!(!buffer.is_empty());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn set_get_info() {
         let dir = tempdir::TempDir::new("file_info").unwrap();
         let storage = FileInfoStorage::new(dir.into_path());
@@ -162,7 +162,7 @@ mod tests {
         assert_eq!(read_info.metadata, read_info.metadata);
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn get_broken_info() {
         let dir = tempdir::TempDir::new("file_info").unwrap();
         let storage = FileInfoStorage::new(dir.into_path());

@@ -4,7 +4,7 @@ use crate::{
     notifiers::{base::Notifier, hooks::Hook},
     RustusResult,
 };
-use actix_web::http::header::HeaderMap;
+use http::HeaderMap;
 use log::debug;
 use std::path::PathBuf;
 use tokio::process::Command;
@@ -57,7 +57,7 @@ mod tests {
     };
 
     use super::DirNotifier;
-    use actix_web::http::header::HeaderMap;
+    use http::HeaderMap;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::{
@@ -66,7 +66,7 @@ mod tests {
     };
     use tempdir::TempDir;
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn no_such_hook_file() {
         let hook_dir = TempDir::new("dir_notifier").unwrap().into_path();
         let notifier = DirNotifier::new(hook_dir);
@@ -82,7 +82,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[actix_rt::test]
+    #[tokio::test]
     async fn success() {
         use crate::file_info::FileInfo;
 

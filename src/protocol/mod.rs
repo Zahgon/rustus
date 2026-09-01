@@ -1,6 +1,9 @@
-use actix_web::web;
+use axum::{
+    routing::{on, MethodFilter, MethodRouter},
+    Router,
+};
 
-use crate::RustusConf;
+use crate::{RustusConf, State as RustusState};
 
 mod core;
 mod creation;
@@ -11,21 +14,31 @@ mod termination;
 /// Configure TUS web application.
 ///
 /// This function resolves all protocol extensions
-/// provided by CLI into services and adds it to the application.
-pub fn setup(app_conf: RustusConf) -> impl Fn(&mut web::ServiceConfig) {
-    move |web_app| {
-        for extension in &app_conf.tus_extensions {
-            match extension {
-                extensions::Extensions::Creation => creation::add_extension(web_app),
-                extensions::Extensions::Termination => {
-                    termination::add_extension(web_app);
-                }
-                extensions::Extensions::Getting => {
-                    getting::add_extension(web_app);
-                }
-                _ => {}
+/// provided by CLI into a router and adds their routes to the application.
+#[must_use]
+pub fn setup(config: &RustusConf) -> Router<RustusState> {
+    // Core endpoints are always available.
+    // OPTIONS /    -> server info.
+    let mut root: MethodRouter<RustusState> = on(MethodFilter::OPTIONS, core::server_info);
+    // PATCH /{file_id}/ -> add bytes.
+    // HEAD  /{file_id}/ -> file info.
+    let mut file: MethodRouter<RustusState> =
+        on(MethodFilter::PATCH, core::write_bytes).on(MethodFilter::HEAD, core::get_file_info);
+
+    for extension in &config.tus_extensions {
+        match extension {
+            extensions::Extensions::Creation => {
+                root = root.on(MethodFilter::POST, creation::create_file);
             }
+            extensions::Extensions::Getting => {
+                file = file.on(MethodFilter::GET, getting::get_file);
+            }
+            extensions::Extensions::Termination => {
+                file = file.on(MethodFilter::DELETE, termination::terminate);
+            }
+            _ => {}
         }
-        core::add_extension(web_app);
     }
+
+    Router::new().route("/", root).route("/{file_id}", file)
 }

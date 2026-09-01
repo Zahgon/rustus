@@ -1,8 +1,12 @@
 use std::{collections::HashMap, io::Write};
 
-use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder};
+use axum::{
+    body::Body,
+    response::{IntoResponse, Response},
+};
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
+use http::HeaderMap;
 use s3::{
     command::Command,
     request::{tokio_backend::HyperRequest, Request},
@@ -131,16 +135,14 @@ impl DataStorage for S3DataStorage {
     async fn get_contents(
         &self,
         file_info: &FileInfo,
-        _request: &HttpRequest,
-    ) -> RustusResult<HttpResponse> {
+        _headers: &HeaderMap,
+    ) -> RustusResult<Response> {
         let key = self.get_s3_key(&file_info.id, file_info.created_at);
         let command = Command::GetObject;
         let s3_request = HyperRequest::new(&self.bucket, &key, command).await?;
         let s3_response = s3_request.response_data_to_stream().await?;
-        let mut response = HttpResponseBuilder::new(actix_web::http::StatusCode::OK);
-        Ok(response
-            .insert_header(generate_disposition(file_info.get_filename()))
-            .streaming(s3_response.bytes))
+        let body = Body::from_stream(s3_response.bytes);
+        Ok(([generate_disposition(file_info.get_filename())], body).into_response())
     }
 
     async fn add_bytes(
@@ -337,7 +339,7 @@ mod test {
         )
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn test_successfull_create_upload() {
         let storage = get_s3_storage();
         let data = "Hello World".as_bytes();
@@ -365,7 +367,7 @@ mod test {
         assert_eq!(ups.len(), 1);
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn test_successfull_upload() {
         let storage = get_s3_storage();
         let data = "Hello World".as_bytes();
@@ -385,7 +387,7 @@ mod test {
         assert_eq!(object.bytes(), data);
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn test_successfull_delete() {
         let storage = get_s3_storage();
         let data = "Hello World".as_bytes();
@@ -412,7 +414,7 @@ mod test {
         }
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn test_successfull_mime() {
         let storage = get_s3_storage();
         let data = "Helloworld of videos!".as_bytes();
@@ -439,7 +441,7 @@ mod test {
         )
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn test_successfull_concat() {
         let storage = get_s3_storage();
 

@@ -1,20 +1,24 @@
-use std::{fs::File, io::Write, path::PathBuf};
+use std::{io::Write, path::PathBuf};
 
-use actix_files::NamedFile;
-use actix_web::{HttpRequest, HttpResponse};
+use axum::{
+    body::Body,
+    response::{IntoResponse, Response},
+};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
+use http::HeaderMap;
 use log::error;
 use std::{
     fs::{remove_file, DirBuilder, OpenOptions},
     io::{copy, BufReader, BufWriter},
 };
+use tokio_util::io::ReaderStream;
 
 use crate::{
     data_storage::base::DataStorage,
     errors::{RustusError, RustusResult},
     file_info::FileInfo,
-    utils::dir_struct::substr_time,
+    utils::{dir_struct::substr_time, headers::generate_disposition},
 };
 use derive_more::Display;
 
@@ -80,19 +84,15 @@ impl DataStorage for FileDataStorage {
     async fn get_contents(
         &self,
         file_info: &FileInfo,
-        request: &HttpRequest,
-    ) -> RustusResult<HttpResponse> {
+        _headers: &HeaderMap,
+    ) -> RustusResult<Response> {
         if let Some(path) = &file_info.path {
-            let file = File::open(path).map_err(|err| {
+            let file = tokio::fs::File::open(path).await.map_err(|err| {
                 error!("{:?}", err);
                 RustusError::FileNotFound
             })?;
-            Ok(NamedFile::from_file(file, file_info.get_filename())
-                .map_err(|err| {
-                    error!("{:?}", err);
-                    RustusError::FileNotFound
-                })?
-                .into_response(request))
+            let body = Body::from_stream(ReaderStream::new(file));
+            Ok(([generate_disposition(file_info.get_filename())], body).into_response())
         } else {
             Err(RustusError::FileNotFound)
         }
@@ -210,15 +210,15 @@ impl DataStorage for FileDataStorage {
 mod tests {
     use super::FileDataStorage;
     use crate::{data_storage::base::DataStorage, file_info::FileInfo};
-    use actix_web::test::TestRequest;
     use bytes::Bytes;
+    use http::HeaderMap;
     use std::{
         fs::File,
         io::{Read, Write},
         path::PathBuf,
     };
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn preparation() {
         let dir = tempdir::TempDir::new("file_storage").unwrap();
         let target_path = dir.into_path().join("not_exist");
@@ -228,7 +228,7 @@ mod tests {
         assert!(target_path.exists());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn create_file() {
         let dir = tempdir::TempDir::new("file_storage").unwrap();
         let storage = FileDataStorage::new(dir.into_path(), String::new(), false);
@@ -237,7 +237,7 @@ mod tests {
         assert!(PathBuf::from(new_path).exists());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn create_file_but_it_exists() {
         let dir = tempdir::TempDir::new("file_storage").unwrap();
         let base_path = dir.into_path().clone();
@@ -248,7 +248,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn adding_bytes() {
         let dir = tempdir::TempDir::new("file_storage").unwrap();
         let storage = FileDataStorage::new(dir.into_path(), String::new(), false);
@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(contents, String::from(test_data));
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn adding_bytes_to_unknown_file() {
         let dir = tempdir::TempDir::new("file_storage").unwrap();
         let storage = FileDataStorage::new(dir.into_path(), String::new(), false);
@@ -284,7 +284,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn get_contents_of_unknown_file() {
         let dir = tempdir::TempDir::new("file_storage").unwrap();
         let storage = FileDataStorage::new(dir.into_path(), String::new(), false);
@@ -295,12 +295,12 @@ mod tests {
             storage.to_string(),
             None,
         );
-        let request = TestRequest::get().to_http_request();
-        let file_info = storage.get_contents(&file_info, &request).await;
+        let headers = HeaderMap::new();
+        let file_info = storage.get_contents(&file_info, &headers).await;
         assert!(file_info.is_err());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn remove_unknown_file() {
         let dir = tempdir::TempDir::new("file_storage").unwrap();
         let storage = FileDataStorage::new(dir.into_path(), String::new(), false);
@@ -315,7 +315,7 @@ mod tests {
         assert!(file_info.is_err());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn success_concatenation() {
         let dir = tempdir::TempDir::new("file_storage").unwrap();
         let storage = FileDataStorage::new(dir.into_path(), String::new(), false);

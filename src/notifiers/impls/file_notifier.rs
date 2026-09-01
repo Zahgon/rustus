@@ -4,7 +4,7 @@ use crate::{
     notifiers::{base::Notifier, hooks::Hook},
     RustusResult,
 };
-use actix_web::http::header::HeaderMap;
+use http::HeaderMap;
 use log::debug;
 use tokio::process::Command;
 
@@ -52,7 +52,7 @@ mod tests {
     };
 
     use super::FileNotifier;
-    use actix_web::http::header::HeaderMap;
+    use http::HeaderMap;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::{
@@ -61,7 +61,7 @@ mod tests {
     };
 
     #[cfg(unix)]
-    #[actix_rt::test]
+    #[tokio::test]
     async fn success() {
         let dir = tempdir::TempDir::new("file_notifier").unwrap().into_path();
         let hook_path = dir.join("executable.sh");
@@ -98,7 +98,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[actix_rt::test]
+    #[tokio::test]
     async fn error_status() {
         let dir = tempdir::TempDir::new("file_notifier").unwrap().into_path();
         let hook_path = dir.join("error_executable.sh");
@@ -125,7 +125,7 @@ mod tests {
         assert!(res.is_err());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn no_such_file() {
         let notifier = FileNotifier::new(format!("/{}.sh", uuid::Uuid::new_v4()));
         let res = notifier

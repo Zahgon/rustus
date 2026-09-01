@@ -120,7 +120,7 @@ mod tests {
         redis.get_multiplexed_async_connection().await.unwrap()
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn success() {
         let info_storage = get_storage().await;
         let file_info = FileInfo::new_test();
@@ -136,7 +136,7 @@ mod tests {
         assert_eq!(file_info.storage, file_info_from_storage.storage);
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn no_connection() {
         let info_storage = RedisInfoStorage::new("redis://unknonwn_url/0", None).unwrap();
         let file_info = FileInfo::new_test();
@@ -144,7 +144,7 @@ mod tests {
         assert!(res.is_err());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn unknown_id() {
         let info_storage = get_storage().await;
         let res = info_storage
@@ -153,7 +153,7 @@ mod tests {
         assert!(res.is_err());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn expiration() {
         let info_storage = get_storage().await;
         let res = info_storage
@@ -162,7 +162,7 @@ mod tests {
         assert!(res.is_err());
     }
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn deletion_success() {
         let mut info_storage = get_storage().await;
         info_storage.expiration = Some(1);

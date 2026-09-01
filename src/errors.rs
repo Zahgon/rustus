@@ -1,6 +1,7 @@
 use std::io::{Error, ErrorKind};
 
-use actix_web::{http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError};
+use axum::response::{IntoResponse, Response};
+use http::{header, StatusCode};
 use log::error;
 
 pub type RustusResult<T> = Result<T, RustusError>;
@@ -63,8 +64,6 @@ pub enum RustusError {
     WrongHeaderValue,
     #[error("Metrics error: {0}")]
     PrometheusError(#[from] prometheus::Error),
-    #[error("Blocking error: {0}")]
-    BlockingError(#[from] actix_web::error::BlockingError),
     #[error("HTTP hook error. Returned status: {0}, Response text: {1}")]
     HTTPHookError(u16, String, Option<String>),
     #[error("Found S3 error: {0}")]
@@ -96,28 +95,9 @@ impl From<RustusError> for Error {
     }
 }
 
-/// Trait to convert errors to http-responses.
-impl ResponseError for RustusError {
-    fn error_response(&self) -> HttpResponse {
-        error!("{}", self);
-        match self {
-            Self::HTTPHookError(_, proxy_response, content_type) => {
-                HttpResponseBuilder::new(self.status_code())
-                    .insert_header((
-                        "Content-Type",
-                        content_type
-                            .as_deref()
-                            .unwrap_or("text/plain; charset=utf-8"),
-                    ))
-                    .body(proxy_response.clone())
-            }
-            _ => HttpResponseBuilder::new(self.status_code())
-                .insert_header(("Content-Type", "text/html; charset=utf-8"))
-                .body(format!("{self}")),
-        }
-    }
-
-    fn status_code(&self) -> StatusCode {
+impl RustusError {
+    #[must_use]
+    pub fn status_code(&self) -> StatusCode {
         match self {
             Self::FileNotFound => StatusCode::NOT_FOUND,
             Self::WrongOffset => StatusCode::CONFLICT,
@@ -131,6 +111,31 @@ impl ResponseError for RustusError {
                 StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
             }
             _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+/// Trait to convert errors to http-responses.
+impl IntoResponse for RustusError {
+    fn into_response(self) -> Response {
+        error!("{}", self);
+        let status = self.status_code();
+        match self {
+            Self::HTTPHookError(_, proxy_response, content_type) => (
+                status,
+                [(
+                    header::CONTENT_TYPE,
+                    content_type.unwrap_or_else(|| "text/plain; charset=utf-8".to_string()),
+                )],
+                proxy_response,
+            )
+                .into_response(),
+            _ => (
+                status,
+                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                format!("{self}"),
+            )
+                .into_response(),
         }
     }
 }
